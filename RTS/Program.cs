@@ -1,13 +1,13 @@
 ﻿namespace RTS {
     using System.Reflection;
-    using System.Windows.Forms;
 
     using log4net;
     using log4net.Config;
 
     class Program {
         private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-        static void Main(string[] args) {
+        
+        public static void Main(string[] args) {
             XmlConfigurator.Configure();
             Log.Info("foo");
 

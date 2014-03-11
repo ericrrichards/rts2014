@@ -27,17 +27,15 @@
 
         public Result Init(int width, int height, bool windowed) {
             Log.Info("Application initiated");
-            _mainWindow = new D3DForm() {
-                Text = "Example", 
-                Name = "D3DWndClassName", 
-                FormBorderStyle = FormBorderStyle.FixedSingle, 
-                ClientSize = new Size(width, height), 
-                StartPosition = FormStartPosition.CenterScreen, 
-                MyWndProc = WndProc, 
+            _mainWindow = new D3DForm {
+                Text = "Example",
+                Name = "D3DWndClassName",
+                FormBorderStyle = FormBorderStyle.FixedSingle,
+                ClientSize = new Size(width, height),
+                StartPosition = FormStartPosition.CenterScreen,
+                MyWndProc = WndProc,
             };
-            
-
-            _mainWindow.Cursor = null;
+            Cursor.Hide();
 
             _mainWindow.Show();
             _mainWindow.Update();
