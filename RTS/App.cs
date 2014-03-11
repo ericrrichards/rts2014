@@ -43,16 +43,13 @@
                 using (var d3d9 = new Direct3D()) {
                     var caps = d3d9.GetDeviceCaps(0, DeviceType.Hardware);
 
-                    CreateFlags vp;
-                    if (caps.DeviceCaps.HasFlag(DeviceCaps.HWTransformAndLight)) {
-                        vp = CreateFlags.HardwareVertexProcessing;
-                    } else {
-                        vp = CreateFlags.SoftwareVertexProcessing;
-                    }
+                    var vp = caps.DeviceCaps.HasFlag(DeviceCaps.HWTransformAndLight) ? 
+                        CreateFlags.HardwareVertexProcessing : 
+                        CreateFlags.SoftwareVertexProcessing;
                     if (caps.VertexShaderVersion < new Version(2, 0) || caps.PixelShaderVersion < new Version(2, 0)) {
                         Log.Warn("Warning - your graphics card does not support vertex and pixel shaders 2.0");
                     }
-                    var d3dpp = new PresentParameters() {
+                    var d3dpp = new PresentParameters {
                         BackBufferWidth =  width,
                         BackBufferHeight = height,
                         BackBufferFormat = Format.A8R8G8B8,
