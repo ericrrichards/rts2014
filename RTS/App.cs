@@ -19,10 +19,20 @@
         private D3DForm _mainWindow;
         private bool _running;
 
+        private Terrain _terrain;
+
+        private float _angle;
+        private float _radius;
+        private bool _wireframe;
+
+
         public App() {
             _device = null;
             _mainWindow = null;
             _font = null;
+            _angle = 0;
+            _radius = 0;
+            _wireframe = false;
         }
 
         public Result Init(int width, int height, bool windowed) {
@@ -35,7 +45,7 @@
                 StartPosition = FormStartPosition.CenterScreen,
                 MyWndProc = WndProc,
             };
-            Cursor.Hide();
+            //Cursor.Hide();
 
             _mainWindow.Show();
             _mainWindow.Update();
@@ -78,6 +88,18 @@
             }
 
             _font = new Font(_device, 48, 0, FontWeight.Bold, 1, false, CharacterSet.Default, Precision.Default, FontQuality.Default, PitchAndFamily.Default|PitchAndFamily.DontCare, "Arial");
+            
+            MapObject.LoadObjectResources(_device);
+            _terrain = new Terrain();
+            _terrain.Init(_device, new Point(100,100));
+            _radius = 100.0f;
+
+            _device.SetSamplerState(0, SamplerState.MagFilter, TextureFilter.Linear);
+            _device.SetSamplerState(0, SamplerState.MinFilter, TextureFilter.Linear);
+            _device.SetSamplerState(0, SamplerState.MipFilter, TextureFilter.Point);
+            
+            
+            
             _running = true;
             return ResultCode.Success;
         }
@@ -97,6 +119,25 @@
 
         public Result Update(float deltaTime) {
 
+            //_angle += deltaTime*0.5f;
+
+            var center = new Vector2(50.0f, 50.0f);
+            var eye = new Vector3(center.X + (float)Math.Cos(_angle) * _radius, _radius, -center.Y + (float)Math.Sin(_angle) * _radius);
+            var lookat = new Vector3(center.X, 0, -center.Y);
+
+            var world = Matrix.Identity;
+            var view = Matrix.LookAtLH(eye, lookat, Vector3.UnitY);
+            var proj = Matrix.PerspectiveFovLH((float) Math.PI/4, 1.3333f, 1.0f, 1000.0f);
+
+            _device.SetTransform(TransformState.World, world);
+            _device.SetTransform(TransformState.View, view);
+            _device.SetTransform(TransformState.Projection, proj);
+
+
+
+
+
+
             if (Util.IsKeyDown(Keys.Escape)) {
                 Quit();
             }
@@ -108,6 +149,10 @@
             _device.Clear(ClearFlags.All, Color.Black, 1.0f, 0);
 
             if (_device.BeginScene().IsSuccess) {
+
+                _terrain.Render();
+
+
                 var r = new Rectangle(0, 0, 640, 480);
                 _font.DrawString(null, "Hello world!", r, DrawTextFormat.Center | DrawTextFormat.VerticalCenter | DrawTextFormat.NoClip, Color.White);
 
@@ -121,12 +166,11 @@
 
         public Result Cleanup() {
             try {
-                if (_font != null) {
-                    _font.Dispose();
-                }
-                if (_device != null) {
-                    _device.Dispose();
-                }
+                Util.ReleaseCom(ref _terrain);
+                Util.ReleaseCom(ref _font);
+                Util.ReleaseCom(ref _device);
+
+                MapObject.UnloadObjectResources();
 
                 Log.Info("Application terminated");
             } catch (Exception ex) {
