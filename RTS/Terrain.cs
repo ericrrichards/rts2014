@@ -92,7 +92,7 @@ namespace RTS {
             _patches.Clear();
 
             Util.ReleaseCom(ref _heightMap);
-
+            
             _objects.Clear();
         }
 
@@ -269,6 +269,12 @@ namespace RTS {
             if (!_disposed) {
                 if (disposing) {
                     Release();
+                    Util.ReleaseCom(ref _terrainPS);
+                    foreach (var diffuseMap in _diffuseMaps) {
+                        var tex = diffuseMap;
+                        Util.ReleaseCom(ref tex);
+                    }
+                    Util.ReleaseCom(ref _alphaMap);
                 }
                 _disposed = true;
             }

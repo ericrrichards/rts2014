@@ -57,16 +57,16 @@ namespace RTS {
 
                         var tx = xf*freq;
                         var ty = yf*freq;
-                        var tx_int = (int) tx;
-                        var ty_int = (int) ty;
+                        var txInt = (int) tx;
+                        var tyInt = (int) ty;
 
-                        var fracX = (float) (tx - tx_int);
-                        var fracY = (float) (ty - ty_int);
+                        var fracX = (float) (tx - txInt);
+                        var fracY = (float) (ty - tyInt);
 
-                        var v1 = Noise(tx_int + ty_int*57 + seed);
-                        var v2 = Noise(tx_int + 1 + ty_int*57 + seed);
-                        var v3 = Noise(tx_int + (ty_int+1) * 57 + seed);
-                        var v4 = Noise(tx_int + 1 + (ty_int+1) * 57 + seed);
+                        var v1 = Noise(txInt + tyInt*57 + seed);
+                        var v2 = Noise(txInt + 1 + tyInt*57 + seed);
+                        var v3 = Noise(txInt + (tyInt+1) * 57 + seed);
+                        var v4 = Noise(txInt + 1 + (tyInt+1) * 57 + seed);
 
                         var i1 = CosInterpolate(v1, v2, fracX);
                         var i2 = CosInterpolate(v3, v4, fracX);
