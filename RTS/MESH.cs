@@ -6,6 +6,9 @@ using SlimDX.Direct3D9;
 namespace RTS {
     internal class MESH : DisposableClass {
         public Device Device { get; private set; }
+
+        public Mesh Mesh { get { return _mesh; } }
+
         private Mesh _mesh;
         private readonly List<Texture> _textures = new List<Texture>();
         private readonly List<Material> _materials = new List<Material>();
@@ -33,7 +36,7 @@ namespace RTS {
             Release();
             _mesh = Mesh.FromFile(Device, filename, MeshFlags.IndexBufferManaged);
 
-            var mtrls = _mesh.GetMaterials();
+            var mtrls = Mesh.GetMaterials();
             foreach (var mtrl in mtrls) {
                 _materials.Add(mtrl.MaterialD3D);
                 if (!string.IsNullOrWhiteSpace(mtrl.TextureFileName)) {
@@ -44,7 +47,7 @@ namespace RTS {
                     _textures.Add(null);
                 }
             }
-            _mesh.OptimizeInPlace(MeshOptimizeFlags.AttributeSort | MeshOptimizeFlags.Compact | MeshOptimizeFlags.VertexCache);
+            Mesh.OptimizeInPlace(MeshOptimizeFlags.AttributeSort | MeshOptimizeFlags.Compact | MeshOptimizeFlags.VertexCache);
         }
 
         public void Render() {
@@ -55,7 +58,7 @@ namespace RTS {
                     Device.Material = _materials[i];
                 }
                 Device.SetTexture(0, _textures[i]);
-                _mesh.DrawSubset(i);
+                Mesh.DrawSubset(i);
             }
         }
 
@@ -104,14 +107,31 @@ namespace RTS {
 
         public void Render() {
             if (Mesh != null) {
-                var p = Matrix.Translation(Position);
-                var r = Matrix.RotationYawPitchRoll(Rotation.Y, Rotation.X, Rotation.Z);
-                var s = Matrix.Scaling(Scale);
-
-                var world = s * r * p;
-                Mesh.Device.SetTransform(TransformState.World, world);
+                
+                Mesh.Device.SetTransform(TransformState.World, GetWorldMatrix());
                 Mesh.Render();
             }
         }
+
+        public Matrix GetWorldMatrix() {
+            var p = Matrix.Translation(Position);
+            var r = Matrix.RotationYawPitchRoll(Rotation.Y, Rotation.X, Rotation.Z);
+            var s = Matrix.Scaling(Scale);
+
+            var world = s * r * p;
+            return world;
+        }
+
+        public BoundingBox GetBoundingBox() {
+            if (Mesh == null || Mesh.Mesh == null) {
+                return new BoundingBox();
+            }
+            if (Mesh.Mesh.VertexFormat != ObjectVertex.FVF) {
+                return new BoundingBox();
+            }
+
+
+        }
+        public BoundingSphere GetBoundingSphere() { }
     }
 }
