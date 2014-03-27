@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -26,6 +27,7 @@ namespace RTS {
         public List<MapTile> MapTiles { get; set; }
         public int Width { get { return _size.X; } }
         public int Height { get { return _size.Y; } }
+        public List<Patch> Patches { get { return _patches; } }
 
         public Terrain() {
             _diffuseMaps = new List<Texture>();

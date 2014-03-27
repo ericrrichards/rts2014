@@ -10,6 +10,10 @@ namespace RTS {
         private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private Device _device;
         private Mesh _mesh;
+        public Mesh Mesh { get { return _mesh; }  }
+        public BoundingBox BoundingBox {get; private set;}
+        public Rectangle MapRect { get; set; }
+
 
         public Result CreateMesh(Terrain terrain, Rectangle source, Device device) {
             if (_mesh != null) {
@@ -17,11 +21,16 @@ namespace RTS {
             }
             try {
                 _device = device;
+                MapRect = source;
 
                 var width = source.Width;
                 var height = source.Height;
                 var nrVerts = (width + 1)*(height + 1);
                 var nrTris = width*height*2;
+
+                var max = new Vector3(-10000);
+                var min = new Vector3(10000);
+
                 try {
                     _mesh = new Mesh(_device, nrTris, nrVerts, MeshFlags.Managed, TerrainVertex.FVF);
                 } catch (Exception ex) {
@@ -34,12 +43,17 @@ namespace RTS {
                         var tile = terrain.GetTile(x, z);
 
                         var pos = new Vector3(x, tile.Height, -z);
+                        min = Vector3.Minimize(min, pos);
+                        max = Vector3.Maximize(max, pos);
+
+                        var norm = terrain.GetNormal(x, z);
                         var alphaUV = new Vector2(((float) x)/terrain.Width, ((float) z)/terrain.Height);
                         var colorUV = alphaUV*8;
-                        data.Write(new TerrainVertex(pos, alphaUV, colorUV));
+                        data.Write(new TerrainVertex(pos, norm, alphaUV, colorUV));
                     }
                 }
                 _mesh.UnlockVertexBuffer();
+                BoundingBox =new BoundingBox(min, max);
 
                 data = _mesh.LockIndexBuffer(LockFlags.Discard);
                 for (int z = source.Top, z0=0; z < source.Bottom; z++, z0++) {
@@ -61,7 +75,7 @@ namespace RTS {
                 }
                 _mesh.UnlockAttributeBuffer();
 
-                _mesh.ComputeNormals();
+                //_mesh.ComputeNormals();
 
 
             } catch (Exception ex) {
