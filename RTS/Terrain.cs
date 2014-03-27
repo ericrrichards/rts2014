@@ -231,7 +231,7 @@ namespace RTS {
             }
         }
 
-        private bool Within(Point p) { return p.X >= 0 && p.Y >= 0 && p.X < _size.X && p.Y < _size.Y; }
+        private bool Within(Point p) { return p.X >= 0 && p.Y >= 0 && p.X < Width && p.Y < Height; }
 
         private void InitPathfinding() {
             try {
@@ -251,13 +251,171 @@ namespace RTS {
                         }
                     }
                 }
+                // calculate tile cost
+                for (int y = 0; y < Height; y++) {
+                    for (int x = 0; x < Width; x++) {
+                        var tile = GetTile(x, y);
+                        if (tile != null) {
+                            var p = new[] {
+                                new Point(x - 1, y - 1), new Point(x, y - 1), new Point(x + 1, y - 1),
+                                new Point(x - 1, y), new Point(x + 1, y),
+                                new Point(x - 1, y + 1), new Point(x, y + 1), new Point(x + 1, y + 1)
+                            };
+                            var variance = 0.0f;
+                            var nr = 0;
+                            for (int i = 0; i < p.Length; i++) {
+                                if (Within(p[i])) {
+                                    var neighbor = GetTile(p[i]);
+                                    if (neighbor != null) {
+                                        var v = neighbor.Height - tile.Height;
+                                        variance += v*v;
+                                        nr++;
+                                    }
+                                }
+                            }
+                            variance /= nr;
+                            tile.Cost = Math.Min(variance + 0.1f, 1.0f);
+                            tile.Walkable = tile.Cost < 0.5f;
+                        }
+                    }
+                }
+                // set tiles with trees & rocks unwalkable
+                foreach (var mapObject in _objects) {
+                    var tile = GetTile(mapObject.MapPos);
+                    if (tile != null) {
+                        tile.Walkable = false;
+                        tile.Cost = 1.0f;
+                    }
+                }
+                // connect tiles with neighbors
+                for (int y = 0; y < Height; y++) {
+                    for (int x = 0; x < Width; x++) {
+                        var tile = GetTile(x, y);
+                        if (tile != null && tile.Walkable) {
+                            
+                            for (int i = 0; i < tile.Neighbors.Count; i++) {
+                                tile.Neighbors[i] = null;
+                            }
+                            var p = new[] {
+                                new Point(x - 1, y - 1), new Point(x, y - 1), new Point(x + 1, y - 1),
+                                new Point(x - 1, y), new Point(x + 1, y),
+                                new Point(x - 1, y + 1), new Point(x, y + 1), new Point(x + 1, y + 1)
+                            };
+                            for (int i = 0; i < p.Length; i++) {
+                                if (Within(p[i])) {
+                                    var neighbor = GetTile(p[i]);
+                                    if (neighbor != null && neighbor.Walkable) {
+                                        tile.Neighbors[i] = neighbor;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                CreateTileSets();
 
-#warning need to finish pathfinding
+
             } catch (Exception ex) {
                 Log.Error("Exception in " + ex.TargetSite.Name, ex);
             }
         }
 
+        private void CreateTileSets() {
+            var setNo = 0;
+            var unvisited = new HashSet<MapTile>();
+            foreach (var mapTile in MapTiles) {
+                if (mapTile.Walkable) {
+                    unvisited.Add(mapTile);
+                } else {
+                    mapTile.Set = --setNo;
+                }
+            }
+            setNo = 0;
+
+            var stack = new Stack<MapTile>();
+            while (unvisited.Any()) {
+                var newFirst = unvisited.First();
+                stack.Push(newFirst);
+                unvisited.Remove(newFirst);
+
+                while (stack.Any()) {
+                    var next = stack.Pop();
+                    next.Set = setNo;
+                    foreach (var neighbor in next.Neighbors.Where(n=>n!=null && unvisited.Contains(n))) {
+                        stack.Push(neighbor);
+                        unvisited.Remove(neighbor);
+                    }
+                }
+                setNo++;
+            }
+        }
+
+        public List<Point> GetPath(Point start, Point goal) {
+            try {
+                var startTile = GetTile(start);
+                var goalTile = GetTile(goal);
+
+                // bounds check
+                if (!Within(start) || !Within(goal) || startTile == null || goalTile == null) {
+                    return new List<Point>();
+                }
+                // walkability check
+                if (!startTile.Walkable || !goalTile.Walkable || startTile.Set != goalTile.Set) {
+                    return new List<Point>();
+                }
+                // init search
+                foreach (var mapTile in MapTiles) {
+                    mapTile.F = mapTile.G = float.MaxValue;
+                    mapTile.Parent = null;
+                }
+                var open = new PriorityQueue<MapTile>(MapTiles.Count);
+                var closed = new HashSet<MapTile>();
+
+                startTile.G = 0;
+                startTile.F = H(start, goal);
+
+                open.Enqueue(startTile, startTile.F);
+                MapTile current = null;
+                while (open.Any() && current != goalTile) {
+                    current = open.Dequeue();
+                    closed.Add(current);
+                    for (int i = 0; i < 8; i++) {
+                        var neighbor = current.Neighbors[i];
+                        if ( neighbor == null) continue;
+
+                        var cost = current.G + neighbor.Cost;
+                        if (open.Contains(neighbor) && cost < neighbor.G) {
+                            open.Remove(neighbor);
+                        }
+                        if (closed.Contains(neighbor) && cost < neighbor.G) {
+                            closed.Remove(neighbor);
+                        }
+                        if (!open.Contains(neighbor) && !closed.Contains(neighbor)) {
+                            neighbor.G = cost;
+                            var f = cost + H(neighbor.MapPosition, goal);
+                            open.Enqueue(neighbor, f);
+                            neighbor.Parent = current;
+                        }
+                    }
+                }
+                System.Diagnostics.Debug.Assert(current == goalTile);
+                var path = new List<Point>();
+                while (current != startTile) {
+                    path.Add(current.MapPosition);
+                    current = current.Parent;
+                }
+                path.Reverse();
+                return path;
+
+            } catch (Exception ex) {
+                Log.Error("Exception in " + ex.TargetSite.Name, ex);
+            }
+            return new List<Point>();
+        }
+
+        private static float H(Point start, Point goal) { return Vector2.Distance(new Vector2(start.X, start.Y), new Vector2(goal.X, goal.Y)); }
+
+        private MapTile GetTile(Point point) { return GetTile(point.X, point.Y); }
         public MapTile GetTile(int x, int y) {
             if (MapTiles == null) return null;
             return MapTiles[x + y*Width];
@@ -283,4 +441,5 @@ namespace RTS {
 
 
     }
+    
 }

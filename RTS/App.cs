@@ -119,7 +119,7 @@
 
         public Result Update(float deltaTime) {
 
-            //_angle += deltaTime*0.5f;
+            _angle += deltaTime*0.5f;
 
             var center = new Vector2(50.0f, 50.0f);
             var eye = new Vector3(center.X + (float)Math.Cos(_angle) * _radius, _radius, -center.Y + (float)Math.Sin(_angle) * _radius);
@@ -154,7 +154,7 @@
 
 
                 var r = new Rectangle(0, 0, 640, 480);
-                _font.DrawString(null, "Hello world!", r, DrawTextFormat.Center | DrawTextFormat.VerticalCenter | DrawTextFormat.NoClip, Color.White);
+                //_font.DrawString(null, "Hello world!", r, DrawTextFormat.Center | DrawTextFormat.VerticalCenter | DrawTextFormat.NoClip, Color.White);
 
                 _device.EndScene();
                 _device.Present();

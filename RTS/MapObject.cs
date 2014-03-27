@@ -7,6 +7,8 @@ namespace RTS {
     internal class MapObject  {
         static readonly List<MESH> ObjectMeshes = new List<MESH>();
 
+        public Point MapPos { get { return _mapPos; } }
+
         public static void LoadObjectResources(Device device) {
             var tree = new MESH("meshes/tree.x", device);
             ObjectMeshes.Add(tree);
