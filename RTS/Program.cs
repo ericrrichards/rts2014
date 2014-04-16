@@ -12,7 +12,7 @@
             Log.Info("foo");
 
             var app = new App();
-            app.Init(640, 480, true);
+            app.Init(800, 600, true);
             app.Run();
 
             

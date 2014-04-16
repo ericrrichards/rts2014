@@ -48,7 +48,7 @@
                 StartPosition = FormStartPosition.CenterScreen,
                 MyWndProc = WndProc,
             };
-            //Cursor.Hide();
+            Cursor.Hide();
 
             _mainWindow.Show();
             _mainWindow.Update();
