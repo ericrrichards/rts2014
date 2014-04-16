@@ -1,15 +1,17 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Linq;
-using System.Net.Mime;
 using System.Reflection;
-using System.Windows.Forms.VisualStyles;
 using log4net;
 using SlimDX;
+using SlimDX.Direct3D10;
 using SlimDX.Direct3D9;
+using Device = SlimDX.Direct3D9.Device;
+using Font = SlimDX.Direct3D9.Font;
+using FontQuality = SlimDX.Direct3D9.FontQuality;
+using FontWeight = SlimDX.Direct3D9.FontWeight;
+using ImageFileFormat = SlimDX.Direct3D9.ImageFileFormat;
 
 
 namespace RTS {
@@ -17,12 +19,24 @@ namespace RTS {
         private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private Point _size;
         private Device _device;
+        private Font _progressFont;
+
         private HeightMap _heightMap;
         private List<Patch> _patches;
         private List<Texture> _diffuseMaps;
         private List<MapObject> _objects;
         private Texture _alphaMap;
+        private Texture _lightMap;
+
+        private Shader _terrainVS;
         private Shader _terrainPS;
+        private Shader _objectVS;
+        private Shader _objectPS;
+
+        private Vector3 _dirToSun;
+        private EffectHandle _vsMatW, _vsMatVP, _vsDirToSun;
+        private EffectHandle _objMatW, _objMatVP, _objDirToSun, _objMapSize;
+        
         private Material _mtrl;
         public List<MapTile> MapTiles { get; set; }
         public int Width { get { return _size.X; } }
@@ -73,9 +87,28 @@ namespace RTS {
             }
             _diffuseMaps.AddRange(new[] { grass, mount, snow });
             _alphaMap = null;
+            _lightMap = null;
 
+            _progressFont = new Font(_device, 40, 0, FontWeight.Normal, 1, false, CharacterSet.Default, 
+                Precision.Default, FontQuality.Default, PitchAndFamily.Default | PitchAndFamily.DontCare, "Arial Black" );
+
+            _dirToSun = new Vector3(1.0f, 0.6f, 0.5f);
+            _dirToSun.Normalize();
+            
             // load pixelshader
             _terrainPS = new Shader(_device, "Shaders/terrain.ps", ShaderType.PixelShader);
+            _terrainVS = new Shader(_device, "Shaders/terrain.vs", ShaderType.VertexShader);
+            _vsMatW = _terrainVS.GetConstant("matW");
+            _vsMatVP = _terrainVS.GetConstant("matVP");
+            _vsDirToSun = _terrainVS.GetConstant("DirToSun");
+
+            _objectPS = new Shader(_device, "Shaders/objects.ps", ShaderType.PixelShader);
+            _objectVS = new Shader(_device, "Shaders/objects.vs", ShaderType.VertexShader);
+            _objMatW = _objectVS.GetConstant("matW");
+            _objMatVP = _objectVS.GetConstant("matVP");
+            _objDirToSun = _objectVS.GetConstant("DirToSun");
+            _objMapSize = _objectVS.GetConstant("mapSize");
+
 
             _mtrl = new Material() {
                 Ambient = new Color4(0.5f, 0.5f, 0.5f),
@@ -83,7 +116,7 @@ namespace RTS {
                 Diffuse = new Color4(0.5f, 0.5f, 0.5f),
                 Emissive = Color.Black,
             };
-            GenerateRandomTerrain(3);
+            GenerateRandomTerrain(9);
         }
 
         public void Release() {
@@ -106,7 +139,7 @@ namespace RTS {
                 _heightMap = new HeightMap(_size, 20.0f);
                 var hm2 = new HeightMap(_size, 2.0f);
 
-                _heightMap.CreateRandomHeightMap(Util.Rand(2000), 2.0f, 0.5f, 8);
+                _heightMap.CreateRandomHeightMap(Util.Rand(2000), 1.0f, 0.7f, 7);
                 hm2.CreateRandomHeightMap(Util.Rand(2000), 2.5f, 0.8f, 3);
 
                 hm2.Cap(hm2.MaxHeight * 0.4f);
@@ -130,6 +163,7 @@ namespace RTS {
                 InitPathfinding();
                 CreatePatches(numPatches);
                 CalculateAlphaMaps();
+                CalculateLightMap();
 
             } catch (Exception ex) {
                 Log.Error("Exception in " + ex.TargetSite.Name, ex);
@@ -147,6 +181,7 @@ namespace RTS {
                 _patches.Clear();
 
                 for (int y = 0; y < numPatches; y++) {
+                    Progress("Creating Terrain Mesh", y / (float)numPatches);
                     for (int x = 0; x < numPatches; x++) {
                         var r = new Rectangle(
                             (int)(x * (_size.X - 1) / (float)numPatches),
@@ -166,6 +201,7 @@ namespace RTS {
         }
 
         private void CalculateAlphaMaps() {
+            Progress("Creating Alpha Map", 0.0f);
             Util.ReleaseCom(ref _alphaMap);
 
             _alphaMap = new Texture(_device, 128, 128, 1, Usage.Dynamic, Format.A8R8G8B8, Pool.Default);
@@ -175,9 +211,7 @@ namespace RTS {
             for (int i = 0; i < 128*128; i++) {
                 cols.Add(new[] {0f, 0f, 0f});
             }
-
-
-
+            
             for (int i = 0; i < _diffuseMaps.Count; i++) {
                 for (int y = 0; y < 128; y++) {
                     for (int x = 0; x < 128; x++) {
@@ -202,6 +236,103 @@ namespace RTS {
             Texture.ToFile(_alphaMap, "alphamap.bmp", ImageFileFormat.Bmp);
         }
 
+        public void CalculateLightMap() {
+            try {
+                Util.ReleaseCom(ref _lightMap);
+
+                var lightMapSize = 256;
+                _lightMap = new Texture(_device, lightMapSize, lightMapSize, 1, Usage.Dynamic, Format.L8, Pool.Default);
+                var lightmap = new List<byte>();
+
+                for (int y = 0; y < lightMapSize; y++) {
+                    Progress("Calculating Lightmap", y / 256.0f);
+                    for (int x = 0; x < lightMapSize; x++) {
+                        float terrainX = _size.X/(x/256.0f);
+                        var terrainZ = _size.Y/(y/256.0f);
+
+                        var done = false;
+                        byte b = 255;
+                        for (int i = 0; i < _patches.Count; i++) {
+                            
+                            var mr = _patches[i].MapRect;
+                            if (mr.Contains((int) terrainX, (int) terrainZ)) {
+                                var raytop = new Ray(new Vector3(terrainX, 10000, -terrainZ), new Vector3(0, -1, 0));
+                                float dist;
+                                if (_patches[i].Mesh.Intersects(raytop, out dist) && dist >= 0.0f) {
+                                    var ray = new Ray(new Vector3(terrainX, 10000 - dist + 0.1f, -terrainZ), _dirToSun);
+                                    for (int p = 0; p < _patches.Count && !done; p++) {
+                                        float d;
+                                        if (Ray.Intersects(ray, _patches[p].BoundingBox, out d)) {
+                                            if (_patches[p].Mesh.Intersects(ray)) {
+                                                b = 128;
+                                                done = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        lightmap.Add(b);
+                    }
+                }
+                System.Diagnostics.Debug.Assert(lightmap.Count == lightMapSize*lightMapSize);
+                for (int i = 0; i < 3; i++) {
+                    Progress("Smoothing Lightmap", i/3.0f);
+                    var temp = new List<byte>(lightmap);
+                    for (int y = 1; y < lightMapSize-1; y++) {
+                        for (int x = 1; x < lightMapSize-1; x++) {
+                            var index = y*lightMapSize + x;
+                            int b1 = lightmap[index];
+                            int b2 = lightmap[index - 1];
+                            int b3 = lightmap[index - lightMapSize];
+                            int b4 = lightmap[index + 1];
+                            if (index + lightMapSize >= lightmap.Count) {
+                                Console.WriteLine(index + lightMapSize);
+                                Console.WriteLine(lightmap.Count);
+                                Console.WriteLine("x: {0} y:{1} i: {2}", x, y, i);
+                            } 
+                                int b5 = lightmap[index + lightMapSize];
+                            
+                            temp[index]= ((byte)((b1+b2+b3+b4+b5)/5));
+                        }
+                    }
+                    lightmap = temp;
+                }
+
+                var data = _lightMap.LockRectangle(0, LockFlags.Discard);
+                foreach (var b in lightmap) {
+                    data.Data.Write(b);
+                }
+                _lightMap.UnlockRectangle(0);
+
+            } catch (Exception ex) {
+                Log.Error("Exception in " + ex.TargetSite.Name, ex);
+            }
+        }
+
+        public Vector3 GetNormal(int x, int y) {
+            var mp = new[] {
+                new Point(x - 1, y), new Point(x, y - 1), 
+                new Point(x + 1, y - 1),new Point(x + 1, y), 
+                new Point(x, y + 1), new Point(x - 1, y + 1),
+            };
+            if (mp.Any(p => !Within(p))) {
+                return new Vector3(0, 1, 0);
+            }
+            var normal = new Vector3();
+            for (int i = 0; i < mp.Length; i++) {
+                var plane = new Plane(
+                    GetWorldPosition(new Point(x, y)), 
+                    GetWorldPosition(mp[i]),
+                    GetWorldPosition(mp[(i+1)%mp.Length])
+                );
+                normal += plane.Normal;
+            }
+            normal.Normalize();
+            return normal;
+        }
+
+
         private void AddObject(int type, Point mapPos) {
             var pos = new Vector3(mapPos.X, _heightMap.GetHeight(mapPos), -mapPos.Y);
             var rot = new Vector3(Util.RandF() * 0.13f, Util.RandF() * 3.0f, Util.RandF() * 0.13f);
@@ -212,7 +343,7 @@ namespace RTS {
             _objects.Add(new MapObject(type, mapPos, pos, rot, sca));
         }
 
-        public void Render() {
+        public void Render( Camera camera) {
             _device.SetRenderState(RenderState.Lighting, false);
             _device.SetRenderState(RenderState.ZWriteEnable, true);
 
@@ -220,17 +351,72 @@ namespace RTS {
             _device.SetTexture(1, _diffuseMaps[0]);
             _device.SetTexture(2, _diffuseMaps[1]);
             _device.SetTexture(3, _diffuseMaps[2]);
+            _device.SetTexture(4, _lightMap);
             _device.Material = _mtrl;
 
+            var world = Matrix.Identity;
+            var vp = camera.GetViewMatrix()*camera.GetProjectionMatrix();
+
+            _device.SetTransform(TransformState.World, world);
+
+            _terrainVS.SetMatrix(_vsMatW, world);
+            _terrainVS.SetMatrix(_vsMatVP, vp);
+            _terrainVS.SetVector3(_vsDirToSun, _dirToSun);
+
+            _terrainVS.Begin();
             _terrainPS.Begin();
             foreach (var patch in _patches) {
-                patch.Render();
+                if (!camera.Cull(patch.BoundingBox)) {
+                    patch.Render();
+                }
             }
             _terrainPS.End();
+            _terrainVS.End();
+
+            _device.SetTexture(1, null);
+            _device.SetTexture(2, null);
+            _device.SetTexture(3, null);
+            _device.SetTexture(4, null);
+
+            _objectVS.SetMatrix(_objMatW, world);
+            _objectVS.SetMatrix(_objMatVP, vp);
+            _objectVS.SetVector3(_objDirToSun, _dirToSun);
+            _objectVS.SetVector3(_objMapSize, new Vector3(_size.X, _size.Y, 0));
+
+            _device.SetTexture(1, _lightMap);
+
+            _objectVS.Begin();
+            _objectPS.Begin();
 
             foreach (var mapObject in _objects) {
-                mapObject.Render();
+                if (!camera.Cull(mapObject.BoundingBox)) {
+                    var m = mapObject.MeshInstance.GetWorldMatrix();
+                    _objectVS.SetMatrix(_objMatW, m);
+                    mapObject.Render();
+                }
             }
+            _objectVS.End();
+            _objectPS.End();
+        }
+
+        public void Progress(string text, float prc) {
+            _device.Clear(ClearFlags.Target | ClearFlags.ZBuffer, Color.White, 1.0f, 0);
+            _device.BeginScene();
+
+            var rc = new Rectangle(200, 250, 400, 50);
+            _progressFont.DrawString(null, text, rc, DrawTextFormat.Center | DrawTextFormat.VerticalCenter | DrawTextFormat.NoClip, Color.Black);
+
+            var r = new Rectangle(200, 300, 400, 40);
+            _device.Clear(ClearFlags.Target | ClearFlags.ZBuffer, Color.Black, 1.0f, 0, new[]{r});
+
+            r = new Rectangle(202, 302, 396, 36);
+            _device.Clear(ClearFlags.Target | ClearFlags.ZBuffer, Color.White, 1.0f, 0, new[] { r });
+
+            r = new Rectangle(202, 302, (int) (396*prc), 36);
+            _device.Clear(ClearFlags.Target | ClearFlags.ZBuffer, Color.Green, 1.0f, 0, new[] { r });
+
+            _device.EndScene();
+            _device.Present();
         }
 
         private bool Within(Point p) { return p.X >= 0 && p.Y >= 0 && p.X < Width && p.Y < Height; }
@@ -244,9 +430,9 @@ namespace RTS {
                             tile.Height = _heightMap.GetHeight(x, y);
                         }
                         tile.MapPosition = new Point(x,y);
-                        if (tile.Height < 1.0f) {
+                        if (tile.Height < 0.3f) {
                             tile.Type = 0; // grass
-                        } else if (tile.Height < 15.0f) {
+                        } else if (tile.Height < 7.0f) {
                             tile.Type = 1; //stone
                         } else {
                             tile.Type = 2; //snow
@@ -423,6 +609,14 @@ namespace RTS {
             return MapTiles[x + y*Width];
         }
 
+        public Vector3 GetWorldPosition(Point mapPos) {
+            if (!Within(mapPos)) {
+                return new Vector3();
+            }
+            var tile = GetTile(mapPos);
+            return new Vector3(mapPos.X, tile.Height, -mapPos.Y);
+        }
+
 
         private bool _disposed;
         protected override void Dispose(bool disposing) {
@@ -430,11 +624,16 @@ namespace RTS {
                 if (disposing) {
                     Release();
                     Util.ReleaseCom(ref _terrainPS);
+                    Util.ReleaseCom(ref _terrainVS);
+                    Util.ReleaseCom(ref _objectPS);
+                    Util.ReleaseCom(ref _objectVS);
                     foreach (var diffuseMap in _diffuseMaps) {
                         var tex = diffuseMap;
                         Util.ReleaseCom(ref tex);
                     }
                     Util.ReleaseCom(ref _alphaMap);
+                    Util.ReleaseCom(ref _lightMap);
+                    Util.ReleaseCom(ref _progressFont);
                 }
                 _disposed = true;
             }

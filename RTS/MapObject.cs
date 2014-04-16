@@ -9,6 +9,10 @@ namespace RTS {
 
         public Point MapPos { get { return _mapPos; } }
 
+        public BoundingBox BoundingBox { get { return _bbox; } }
+
+        public MeshInstance MeshInstance { get { return _meshInstance; } }
+
         public static void LoadObjectResources(Device device) {
             var tree = new MESH("meshes/tree.x", device);
             ObjectMeshes.Add(tree);
@@ -27,6 +31,7 @@ namespace RTS {
         private Point _mapPos;
         private MeshInstance _meshInstance;
         private int _type;
+        private BoundingBox _bbox;
 
         public MapObject() {
             _type = 0;
@@ -36,13 +41,14 @@ namespace RTS {
             _type = t;
             _mapPos = mp;
             _meshInstance = new MeshInstance(ObjectMeshes[_type],pos, rot, sca);
-            _meshInstance.Position = pos;
-            _meshInstance.Rotation = rot;
-            _meshInstance.Scale = sca;
-            _meshInstance.Mesh = ObjectMeshes[_type];
+            MeshInstance.Position = pos;
+            MeshInstance.Rotation = rot;
+            MeshInstance.Scale = sca;
+            MeshInstance.Mesh = ObjectMeshes[_type];
+            _bbox = MeshInstance.GetBoundingBox();
         }
 
-        public void Render() { _meshInstance.Render(); }
+        public void Render() { MeshInstance.Render(); }
 
     }
 }

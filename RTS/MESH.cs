@@ -129,9 +129,53 @@ namespace RTS {
             if (Mesh.Mesh.VertexFormat != ObjectVertex.FVF) {
                 return new BoundingBox();
             }
+            var min = new Vector3(10000);
+            var max = new Vector3(-10000);
 
+            var world = GetWorldMatrix();
 
+            var data = Mesh.Mesh.LockVertexBuffer(LockFlags.None);
+            for (int i = 0; i < Mesh.Mesh.VertexCount; i++) {
+                var v = data.Read<ObjectVertex>();
+                var pos = Vector3.TransformCoordinate(v.Position, world);
+
+                min = Vector3.Minimize(min, pos);
+                max = Vector3.Maximize(max, pos);
+
+            }
+            Mesh.Mesh.UnlockVertexBuffer();
+
+            var bbox = new BoundingBox(min, max);
+            return bbox;
         }
-        public BoundingSphere GetBoundingSphere() { }
+
+        public BoundingSphere GetBoundingSphere() {
+            if (Mesh == null || Mesh.Mesh == null) {
+                return new BoundingSphere();
+            }
+            if (Mesh.Mesh.VertexFormat != ObjectVertex.FVF) {
+                return new BoundingSphere();
+            }
+            var bbox = GetBoundingBox();
+            var world = GetWorldMatrix();
+            var center = (bbox.Maximum + bbox.Minimum)/2;
+            var radius = 0.0f;
+            var data = Mesh.Mesh.LockVertexBuffer(LockFlags.None);
+            for (int i = 0; i < Mesh.Mesh.VertexCount; i++) {
+                var v = data.Read<ObjectVertex>();
+                var pos = Vector3.TransformCoordinate(v.Position, world);
+
+                var l = (pos - center).Length();
+                if (l > radius) {
+                    radius = l;
+                }
+
+            }
+            Mesh.Mesh.UnlockVertexBuffer();
+
+            var bsphere = new BoundingSphere(center, radius);
+
+            return bsphere;
+        }
     }
 }

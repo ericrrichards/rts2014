@@ -63,7 +63,7 @@ namespace RTS {
                     Ambient = Color.Black,
                     Emissive = Color.Black
                 };
-
+                _mouseState = new MouseState();
 
             } catch (Exception ex) {
                 Log.Error("Exception in " + ex.TargetSite.Name, ex);
@@ -191,6 +191,8 @@ namespace RTS {
                 if (disposing) {
                     Util.ReleaseCom(ref _mouseDevice);
                     Util.ReleaseCom(ref _mouseTexture);
+                    Util.ReleaseCom(ref _sphereMesh);
+                    Util.ReleaseCom(ref _sprite);
                 }
                 _disposed = true;
             }

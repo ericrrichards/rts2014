@@ -20,19 +20,22 @@
         private bool _running;
 
         private Terrain _terrain;
+        private Camera _camera;
+        private Mouse _mouse;
 
-        private float _angle;
-        private float _radius;
         private bool _wireframe;
+        private long _time, _snapTime;
+        private int _fps, _lastFps;
+
 
 
         public App() {
             _device = null;
             _mainWindow = null;
             _font = null;
-            _angle = 0;
-            _radius = 0;
             _wireframe = false;
+
+            _time = _snapTime = Stopwatch.GetTimestamp();
         }
 
         public Result Init(int width, int height, bool windowed) {
@@ -92,11 +95,20 @@
             MapObject.LoadObjectResources(_device);
             _terrain = new Terrain();
             _terrain.Init(_device, new Point(100,100));
-            _radius = 100.0f;
+            _mouse = new Mouse();
+            _mouse.InitMouse(_device);
 
-            _device.SetSamplerState(0, SamplerState.MagFilter, TextureFilter.Linear);
-            _device.SetSamplerState(0, SamplerState.MinFilter, TextureFilter.Linear);
-            _device.SetSamplerState(0, SamplerState.MipFilter, TextureFilter.Point);
+            _camera = new Camera();
+            _camera.Init(_device);
+            _camera.Focus = new Vector3(50, 10, -50);
+            _camera.FOV = 0.6f;
+            _camera.Radius = 50.0f;
+            for (int i = 0; i < 8; i++) {
+                _device.SetSamplerState(i, SamplerState.MagFilter, TextureFilter.Linear);
+                _device.SetSamplerState(i, SamplerState.MinFilter, TextureFilter.Linear);
+                _device.SetSamplerState(i, SamplerState.MipFilter, TextureFilter.Point);
+            }
+            
             
             
             
@@ -119,19 +131,8 @@
 
         public Result Update(float deltaTime) {
 
-            _angle += deltaTime*0.5f;
-
-            var center = new Vector2(50.0f, 50.0f);
-            var eye = new Vector3(center.X + (float)Math.Cos(_angle) * _radius, _radius, -center.Y + (float)Math.Sin(_angle) * _radius);
-            var lookat = new Vector3(center.X, 0, -center.Y);
-
-            var world = Matrix.Identity;
-            var view = Matrix.LookAtLH(eye, lookat, Vector3.UnitY);
-            var proj = Matrix.PerspectiveFovLH((float) Math.PI/4, 1.3333f, 1.0f, 1000.0f);
-
-            _device.SetTransform(TransformState.World, world);
-            _device.SetTransform(TransformState.View, view);
-            _device.SetTransform(TransformState.Projection, proj);
+            _camera.Update(_mouse, _terrain, deltaTime);
+            _mouse.Update(_terrain);
 
 
 
@@ -150,7 +151,8 @@
 
             if (_device.BeginScene().IsSuccess) {
 
-                _terrain.Render();
+                _terrain.Render(_camera);
+                _mouse.Paint();
 
 
                 var r = new Rectangle(0, 0, 640, 480);
@@ -169,6 +171,7 @@
                 Util.ReleaseCom(ref _terrain);
                 Util.ReleaseCom(ref _font);
                 Util.ReleaseCom(ref _device);
+                Util.ReleaseCom(ref _mouse);
 
                 MapObject.UnloadObjectResources();
 
